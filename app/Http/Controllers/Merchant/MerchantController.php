@@ -33,7 +33,8 @@ class  MerchantController extends Controller {
 
     public function show(int $id) { return response()->json($this->service->get($id)); }
 
-    public function update(MerchantUpdateRequest $request, int $id) {
-        return response()->json($this->service->updateForCurrentUser($id, $request->validated()));
+    public function update(MerchantUpdateRequest $request) {
+        $merchantId = auth()->user()->merchant->id;
+        return response()->json($this->service->updateForCurrentUser($merchantId, $request->validated()));
     }
 }

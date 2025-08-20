@@ -47,7 +47,7 @@ Route::middleware('auth:sanctum', 'role:merchant')->group(function () {
 Route::middleware(['auth:sanctum', 'role:merchant', 'merchant.verified'])->group(function () {
     // Merchant profile management
     Route::get('/merchant/profile', [MerchantController::class, 'profile']);
-    Route::post('/merchant/update', [MerchantController::class, 'updateProfile']);
+    Route::post('/merchant/update', [MerchantController::class, 'update']);
 
     // Merchant Transactions
     Route::get('/merchant/transactions', [TransactionController::class, 'index']);
