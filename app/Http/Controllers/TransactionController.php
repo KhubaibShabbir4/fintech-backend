@@ -9,6 +9,7 @@ use App\Http\Requests\RefundRequest;
 use App\Models\Payment;
 use Illuminate\Http\Request;
 
+
 class TransactionController extends Controller {
     public function __construct(
         private TransactionServiceInterface $tx,
@@ -17,7 +18,18 @@ class TransactionController extends Controller {
     ) {}
 
     public function index(Request $request) {
-        $filters = $request->only('merchant_id','status','date_from','date_to');
+        $filters = $request->only('merchant_id','status','date_from','date_to','customer_id');
+
+        // If the caller is a merchant, always scope to their merchant_id
+        $user = $request->user();
+        if ($user && $user->hasRole('merchant')) {
+            $merchantId = $user->merchant?->id;
+            if (!$merchantId) {
+                abort(403, 'Merchant profile not found for user.');
+            }
+            $filters['merchant_id'] = $merchantId;
+        }
+
         return response()->json($this->tx->list($filters, (int)($request->per_page ?? 15)));
     }
 
@@ -50,5 +62,43 @@ class TransactionController extends Controller {
         }
 
         return response()->json($refund);
+    }
+
+    public function exportCsv(Request $request) {
+        $filters = $request->only('merchant_id','status','date_from','date_to','customer_id');
+
+        $user = $request->user();
+        if ($user && $user->hasRole('merchant')) {
+            $merchantId = $user->merchant?->id;
+            if (!$merchantId) {
+                abort(403, 'Merchant profile not found for user.');
+            }
+            $filters['merchant_id'] = $merchantId;
+        }
+
+        $filename = 'transactions_export.csv';
+        $tempFile = tempnam(sys_get_temp_dir(), 'transactions_export_');
+        
+        $columns = [
+            'id','payment_id','merchant_id','customer_name','customer_email','customer_phone','country_code','amount','status','stripe_payment_intent','stripe_session_id','created_at'
+        ];
+
+        // Write CSV to temporary file
+        $out = fopen($tempFile, 'w');
+        // BOM for Excel compatibility
+        fwrite($out, "\xEF\xBB\xBF");
+        fputcsv($out, $columns);
+
+        foreach ($this->tx->export($filters) as $row) {
+            $line = [];
+            foreach ($columns as $col) { $line[] = $row[$col] ?? ''; }
+            fputcsv($out, $line);
+        }
+        fclose($out);
+
+        // Return file download response
+        return response()->download($tempFile, $filename, [
+            'Content-Type' => 'text/csv; charset=UTF-8',
+        ])->deleteFileAfterSend(true);
     }
 }

@@ -39,12 +39,13 @@ class PaymentService implements PaymentServiceInterface {
 
         Transaction::create([
             'payment_id'=>$payment->id,
+            'merchant_id'=>$payment->merchant_id,
             'customer_name'=>$data['customer']['name'] ?? null,
             'customer_email'=>$data['customer']['email'] ?? null,
             'customer_phone'=>$data['customer']['phone'] ?? null,
             'country_code'=>null,
             'amount'=>$payment->amount,
-            'status'=>'initiated',
+            'status'=>'pending',
             'extra'=>['ip'=>request()->ip(),'ua'=>request()->userAgent()],
         ]);
 

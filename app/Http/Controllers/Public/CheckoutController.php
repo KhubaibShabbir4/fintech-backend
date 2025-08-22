@@ -57,6 +57,7 @@ class CheckoutController extends Controller
 
         Transaction::create([
             'payment_id' => $payment->id,
+            'merchant_id' => $merchant->id,
             'customer_name' => $data['customer']['name'] ?? null,
             'customer_email' => $data['customer']['email'] ?? null,
             'customer_phone' => $data['customer']['phone'] ?? null,

@@ -6,6 +6,8 @@ use App\Http\Requests\AuthRegisterRequest;
 use App\Services\Interfaces\AuthServiceInterface;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
+use App\Models\User;
+use Illuminate\Support\Facades\Hash;
 
 class AuthController extends Controller
 {
@@ -19,12 +21,10 @@ class AuthController extends Controller
     public function login(Request $request)
     {
         $credentials = $request->only('email', 'password');
-
-        if (!auth()->attempt($credentials)) {
+        $user = User::where('email', $credentials['email'] ?? null)->first();
+        if (!$user || !Hash::check($credentials['password'] ?? '', $user->password)) {
             return response()->json(['message' => 'Invalid credentials'], 401);
         }
-
-        $user = auth()->user();
         $token = $user->createToken('API Token')->plainTextToken;
 
         return response()->json([

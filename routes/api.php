@@ -44,19 +44,20 @@ Route::get('/payment/cancel', [PaymentController::class, 'cancel']);
 // =============================
 // Merchant APIs (Protected)
 // =============================
-Route::middleware('auth:sanctum', 'role:merchant')->group(function () {
+Route::middleware('auth:sanctum', 'role:merchant,api')->group(function () {
     Route::post('/merchant/register', [MerchantController::class, 'store']); // to update the registration
     Route::post('/merchant/onboarding-link', [MerchantController::class, 'onboardingLink']);
 });
 
 
-Route::middleware(['auth:sanctum', 'role:merchant', 'merchant.verified'])->group(function () {
+Route::middleware(['auth:sanctum', 'role:merchant,api', 'merchant.verified'])->group(function () {
     // Merchant profile management
     Route::get('/merchant/profile', [MerchantController::class, 'profile']);
     Route::post('/merchant/update', [MerchantController::class, 'update']);
 
     // Merchant Transactions
     Route::get('/merchant/transactions', [TransactionController::class, 'index']);
+    Route::get('/merchant/transactions/export', [TransactionController::class, 'exportCsv']);
     Route::get('/merchant/transactions/{id}', [TransactionController::class, 'show']);
     Route::post('/merchant/transactions/{paymentId}/refund', [TransactionController::class, 'refund']);
 
@@ -69,7 +70,7 @@ Route::middleware(['auth:sanctum', 'role:merchant', 'merchant.verified'])->group
 // =============================
 // Admin APIs (Protected)
 // =============================
-Route::middleware(['auth:sanctum', 'role:admin'])->group(function () {
+Route::middleware(['auth:sanctum', 'role:admin,api'])->group(function () {
     // Merchant Approvals
     Route::get('/admin/dashboard', [MerchantApprovalController::class, 'dashboard']);
     Route::post('/admin/approve-merchant/{id}', [MerchantApprovalController::class, 'approveMerchant']);
@@ -77,6 +78,7 @@ Route::middleware(['auth:sanctum', 'role:admin'])->group(function () {
 
     // Transactions
     Route::get('/admin/transactions', [TransactionController::class, 'index']);
+    Route::get('/admin/transactions/export', [TransactionController::class, 'exportCsv']);
     Route::get('/admin/transactions/{id}', [TransactionController::class, 'show']);
     Route::post('/admin/transactions/{paymentId}/refund', [TransactionController::class, 'refund']);
 
