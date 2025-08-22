@@ -16,6 +16,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'merchant.verified' => \App\Http\Middleware\EnsureMerchantVerified::class,
             'role'              => \Spatie\Permission\Middleware\RoleMiddleware::class,
             'permission'        => \Spatie\Permission\Middleware\PermissionMiddleware::class,
+            'web'               => \App\Http\Middleware\SkipNgrokWarning::class,
         ]);
         $middleware->api(prepend: [
             \Laravel\Sanctum\Http\Middleware\EnsureFrontendRequestsAreStateful::class,

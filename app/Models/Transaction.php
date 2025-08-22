@@ -6,7 +6,7 @@ use Illuminate\Database\Eloquent\Model;
 class Transaction extends Model {
     protected $fillable = [
         'payment_id','customer_name','customer_email','customer_phone',
-        'country_code','amount','status','extra'
+        'country_code','amount','status','extra','stripe_payment_intent','stripe_session_id'
     ];
     protected $casts = ['extra'=>'array'];
 

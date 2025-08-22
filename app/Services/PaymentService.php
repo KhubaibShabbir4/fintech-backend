@@ -1,7 +1,6 @@
 <?php
 
 namespace App\Services;
-namespace App\Services;
 
 use App\Models\{Payment, Transaction, CheckoutSession, WebhookLog, Refund, Merchant};
 use App\Services\Interfaces\PaymentServiceInterface;
@@ -10,8 +9,14 @@ use Stripe\StripeClient;
 use Stripe\Webhook;
 
 class PaymentService implements PaymentServiceInterface {
-    public function __construct(private StripeClient $stripe = new StripeClient(null)) {
-        $this->stripe = new StripeClient(config('services.stripe.secret') ?? env('STRIPE_SECRET'));
+    public function __construct(private ?StripeClient $stripe = null) {
+        if ($this->stripe === null) {
+            $apiKey = config('services.stripe.secret') ?? env('STRIPE_SECRET');
+            if (empty($apiKey)) {
+                throw new \RuntimeException('Stripe secret is not configured. Set STRIPE_SECRET or services.stripe.secret.');
+            }
+            $this->stripe = new StripeClient($apiKey);
+        }
     }
 
     public function createCheckout(array $data): array {

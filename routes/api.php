@@ -7,6 +7,7 @@ use App\Http\Controllers\Admin\MerchantApprovalController;
 use App\Http\Controllers\TransactionController;
 use App\Http\Controllers\StatsController;
 use App\Http\Controllers\Public\CheckoutController;
+use App\Http\Controllers\PaymentController;
 
 /*
 |--------------------------------------------------------------------------
@@ -32,15 +33,20 @@ Route::prefix('auth')->group(function () {
 // =============================
 Route::prefix('payments')->group(function () {
     Route::post('/checkout', [CheckoutController::class, 'checkout']);
-    Route::post('/webhook', [CheckoutController::class, 'webhook']); // Stripe callback
+    Route::post('/webhook', [PaymentController::class, 'webhook']); // Stripe callback
     Route::get('/status/{reference}', [CheckoutController::class, 'status']);
 });
+
+// Stripe redirect pages (singular path as required)
+Route::get('/payment/success', [PaymentController::class, 'success']);
+Route::get('/payment/cancel', [PaymentController::class, 'cancel']);
 
 // =============================
 // Merchant APIs (Protected)
 // =============================
 Route::middleware('auth:sanctum', 'role:merchant')->group(function () {
     Route::post('/merchant/register', [MerchantController::class, 'store']); // to update the registration
+    Route::post('/merchant/onboarding-link', [MerchantController::class, 'onboardingLink']);
 });
 
 

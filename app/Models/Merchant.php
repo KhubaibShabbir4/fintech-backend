@@ -7,7 +7,7 @@ class Merchant extends Model {
 protected $fillable = [
 'user_id','business_name','logo_path',
 'bank_account_name','bank_account_number','bank_ifsc_swift',
-'payout_preferences','status'
+'payout_preferences','status','stripe_account_id'
 ];
 protected $casts = ['payout_preferences' => 'array'];
 
