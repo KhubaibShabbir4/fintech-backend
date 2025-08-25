@@ -41,7 +41,6 @@ class MerchantService implements MerchantServiceInterface {
     public function setApproval(int $id, string $status): Merchant {
         $merchant = Merchant::findOrFail($id);
 
-        // Normalize approved → verified
         if ($status === 'approved') {
             $status = 'verified';
         }

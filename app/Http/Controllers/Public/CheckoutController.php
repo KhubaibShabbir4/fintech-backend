@@ -19,7 +19,9 @@ class CheckoutController extends Controller
         private StripeService $stripe
     ) {}
 
-    // ✅ Checkout endpoint (customers)
+    /**
+     * 🚀 Create Checkout Session
+     */
     public function checkout(CheckoutRequest $request)
     {
         $data = $request->validated();
@@ -30,22 +32,23 @@ class CheckoutController extends Controller
         }
 
         $successUrl = $data['return_url_success'] ?? url('/success');
-        $cancelUrl = $data['return_url_failure'] ?? url('/cancel');
+        $cancelUrl  = $data['return_url_failure'] ?? url('/cancel');
 
         $session = $this->stripe->createCheckoutSession(
-            (float)$data['amount'],
+            (float) $data['amount'],
             $data['currency'] ?? 'usd',
             $merchant->stripe_account_id,
             $successUrl,
             $cancelUrl
         );
 
+        // Save Payment (pending)
         $payment = Payment::create([
             'merchant_id' => $merchant->id,
             'provider' => 'stripe',
-            'provider_payment_id' => $session['payment_intent'] ?? null,
+            'provider_payment_id' => null, // will be updated later
             'currency' => $data['currency'] ?? 'usd',
-            'amount' => (float)$data['amount'],
+            'amount' => (float) $data['amount'],
             'method' => $data['method'],
             'status' => 'pending',
             'reference' => 'ref_' . bin2hex(random_bytes(8)),
@@ -55,6 +58,7 @@ class CheckoutController extends Controller
             ],
         ]);
 
+        // Save Transaction (pending)
         Transaction::create([
             'payment_id' => $payment->id,
             'merchant_id' => $merchant->id,
@@ -65,110 +69,137 @@ class CheckoutController extends Controller
             'amount' => $payment->amount,
             'status' => 'pending',
             'extra' => ['ip' => $request->ip(), 'ua' => $request->userAgent()],
-            'stripe_payment_intent' => $session['payment_intent'] ?? null,
-            'stripe_session_id' => $session['id'] ?? null,
+            'stripe_payment_intent' => null,               // will be filled later by webhook
+            'stripe_session_id' => $session['id'] ?? null, // save session_id now
+            'stripe_charge_id' => null,
         ]);
 
-        return response()->json(['url' => $session['url'], 'session_id' => $session['id']]);
+        return response()->json([
+            'url' => $session['url'],
+            'session_id' => $session['id'],
+        ]);
     }
 
-    // ✅ Webhook endpoint (Stripe → our app)
+    /**
+     * 🔔 Stripe Webhook Handler
+     */
     public function webhook(Request $request)
     {
         $payload = $request->getContent();
-        $sig = $request->headers->get('Stripe-Signature');
-        $secret = config('services.stripe.webhook_secret');
+        $sig     = $request->headers->get('Stripe-Signature');
+        $secret  = config('services.stripe.webhook_secret');
 
         try {
             $event = \Stripe\Webhook::constructEvent($payload, $sig, $secret);
         } catch (\Throwable $e) {
-            Log::error('Stripe Webhook signature verification failed', ['error' => $e->getMessage()]);
+            Log::error('❌ Stripe Webhook signature verification failed', [
+                'error' => $e->getMessage(),
+                'payload' => $payload
+            ]);
             return response()->json(['message' => 'Invalid signature'], 400);
         }
 
-        $type = $event->type;
+        $type   = $event->type;
         $object = $event->data->object ?? null;
 
         if (!$object) {
             return response()->json(['ok' => true]);
         }
 
-        Log::info('Stripe Webhook received', ['type' => $type]);
+        Log::info('✅ Stripe Webhook received', [
+            'type'   => $type,
+            'object' => $object,
+        ]);
 
-        // 🔎 Helper: find transaction by PI or session
-        $findTransaction = function ($pi = null, $sessionId = null) {
-            return Transaction::where('stripe_payment_intent', $pi)
-                ->orWhere('stripe_session_id', $sessionId)
+        $findTransaction = function ($pi = null, $sessionId = null, $chargeId = null) {
+            return Transaction::when($pi, fn($q) => $q->orWhere('stripe_payment_intent', $pi))
+                ->when($sessionId, fn($q) => $q->orWhere('stripe_session_id', $sessionId))
+                ->when($chargeId, fn($q) => $q->orWhere('stripe_charge_id', $chargeId))
                 ->first();
         };
 
-        // ✅ Case 1: Checkout session completed
+        /**
+         * 🟢 Checkout Session Completed
+         */
         if ($type === 'checkout.session.completed') {
             $sessionId = $object->id;
-            $pi = $object->payment_intent ?? null;
+            $pi        = $object->payment_intent ?? null;
+
+            if (!$pi) {
+                try {
+                    $session = \Stripe\Checkout\Session::retrieve([
+                        'id' => $sessionId,
+                        'expand' => ['payment_intent'],
+                    ]);
+                    $pi = $session->payment_intent?->id ?? null;
+                } catch (\Exception $e) {
+                    Log::error('❌ Failed to fetch session for PI', [
+                        'error' => $e->getMessage(),
+                        'session_id' => $sessionId,
+                    ]);
+                }
+            }
 
             $tx = $findTransaction($pi, $sessionId);
             if ($tx) {
-                $tx->status = 'success';
-                if ($pi) {
-                    $tx->stripe_payment_intent = $pi; // backfill if missing
+                $tx->update([
+                    'status' => 'success',
+                    'stripe_payment_intent' => $pi,
+                ]);
+
+                if ($tx->payment) {
+                    $tx->payment->update([
+                        'status' => 'success',
+                        'provider_payment_id' => $pi,
+                    ]);
                 }
-                $tx->save();
-
-                $tx->payment?->update([
-                    'status' => 'success',
-                    'provider_payment_id' => $pi ?? $tx->payment->provider_payment_id,
+            } else {
+                Log::warning('⚠️ Transaction not found for checkout.session.completed', [
+                    'pi' => $pi,
+                    'session_id' => $sessionId,
                 ]);
-
-                Log::info('Transaction updated (checkout.session.completed)', ['tx_id' => $tx->id]);
             }
         }
 
-        // ✅ Case 2: Payment intent succeeded or failed
-        if ($type === 'payment_intent.succeeded' || $type === 'payment_intent.payment_failed') {
-            $pi = $object->id;
-            $tx = $findTransaction($pi);
-
-            if ($tx) {
-                $status = $type === 'payment_intent.succeeded' ? 'success' : 'failed';
-                $tx->status = $status;
-                $tx->stripe_payment_intent = $pi;
-                $tx->save();
-
-                $tx->payment?->update([
-                    'status' => $status,
-                    'provider_payment_id' => $pi,
-                ]);
-
-                Log::info('Transaction updated (payment_intent)', ['tx_id' => $tx->id, 'status' => $status]);
-            }
-        }
-
-        // ✅ Case 3: Charge events
-        if ($type === 'charge.succeeded' || $type === 'charge.updated') {
+        /**
+         * 🟢 Charge Succeeded (Backup)
+         */
+        if ($type === 'charge.succeeded') {
+            $chargeId = $object->id;
             $pi = $object->payment_intent ?? null;
-            $tx = $findTransaction($pi);
 
+            $tx = $findTransaction($pi, null, $chargeId);
             if ($tx) {
-                $tx->status = 'success';
-                $tx->stripe_payment_intent = $pi ?? $tx->stripe_payment_intent;
-                $tx->save();
-
-                $tx->payment?->update([
+                $tx->update([
                     'status' => 'success',
-                    'provider_payment_id' => $pi,
+                    'stripe_payment_intent' => $pi,
+                    'stripe_charge_id' => $chargeId,
                 ]);
 
-                Log::info('Transaction updated (charge)', ['tx_id' => $tx->id]);
+                if ($tx->payment) {
+                    $tx->payment->update([
+                        'status' => 'success',
+                        'provider_payment_id' => $pi,
+                    ]);
+                }
+            } else {
+                Log::warning('⚠️ Transaction not found for charge.succeeded', [
+                    'pi' => $pi,
+                    'charge_id' => $chargeId,
+                ]);
             }
         }
 
         return response()->json(['ok' => true]);
     }
 
-    // ✅ Status by reference (merchants can poll this)
+    /**
+     * 🔍 Check status by reference
+     */
     public function status(string $reference)
     {
-        return response()->json($this->payments->getPaymentStatusByReference($reference));
+        return response()->json(
+            $this->payments->getPaymentStatusByReference($reference)
+        );
     }
 }

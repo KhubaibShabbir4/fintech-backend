@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use Stripe\StripeClient;
+use Illuminate\Support\Facades\Log;
 
 class StripeService
 {
@@ -62,10 +63,16 @@ class StripeService
             ]],
             'payment_intent_data' => [
                 'transfer_data' => [
-                    'destination' => $merchantStripeAccountId,
+                    'destination' => $merchantStripeAccountId, // ✅ funds go to merchant
                 ],
-                // 'application_fee_amount' => 0, // set if you charge a fee
+                // 'application_fee_amount' => 200, // optional platform fee
             ],
+        ]); // ❌ removed "['stripe_account' => ...]" — create session on platform
+
+        Log::info("Stripe CheckoutSession created", [
+            'session_id' => $session->id,
+            'pi' => $session->payment_intent,
+            'merchant_account' => $merchantStripeAccountId,
         ]);
 
         return [
@@ -91,5 +98,3 @@ class StripeService
         ];
     }
 }
-
-
