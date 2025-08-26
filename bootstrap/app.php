@@ -2,6 +2,8 @@
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
+use Illuminate\Http\Middleware\HandleCors;
+use App\Http\Middleware\NormalizeApiPrefix;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -18,6 +20,10 @@ return Application::configure(basePath: dirname(__DIR__))
             'permission'        => \Spatie\Permission\Middleware\PermissionMiddleware::class,
             'web'               => \App\Http\Middleware\SkipNgrokWarning::class,
         ]);
+        // Enable CORS for all routes (configured via config/cors.php)
+        $middleware->append(HandleCors::class);
+        // Normalize missing /api prefix from common API paths
+        $middleware->prepend(NormalizeApiPrefix::class);
         $middleware->api(prepend: [
             \Laravel\Sanctum\Http\Middleware\EnsureFrontendRequestsAreStateful::class,
         ]);
