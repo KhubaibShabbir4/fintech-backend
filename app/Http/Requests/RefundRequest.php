@@ -8,8 +8,7 @@ class RefundRequest extends FormRequest {
     public function authorize(): bool { return true; }
     public function rules(): array {
         return [
-            'amount'=>'required|numeric|min:0.5',
-            'reason'=>'nullable|string|max:500',
+            'reason'=>'required|string|max:500',
         ];
     }
 }

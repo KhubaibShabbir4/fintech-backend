@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Services\Interfaces\MerchantServiceInterface;
 use App\Models\Merchant;
+use App\Models\User;
 use Illuminate\Http\Request;
 
 
@@ -41,5 +42,37 @@ class MerchantApprovalController extends Controller {
     public function setStatus(Request $request, int $id) {
         $data = $request->validate(['status'=>'required|in:verified,rejected']);
         return response()->json($this->service->setApproval($id, $data['status']));
+    }
+
+    /**
+     * Get all merchants with their user information
+     * Only accessible by admin users
+     */
+    public function getAllMerchants()
+    {
+        // Fetch ALL users with merchant role (includes those without a verified profile)
+        $merchants = User::role('merchant', 'api')
+            ->with(['merchant:id,user_id,business_name,status,created_at'])
+            ->select('id', 'name', 'email')
+            ->get()
+            ->map(function ($user) {
+                $merchant = $user->merchant; // may be null if profile not created yet
+                return [
+                    'user_id' => $user->id,
+                    'user_name' => $user->name,
+                    'user_email' => $user->email,
+                    'merchant_id' => $merchant?->id,
+                    'business_name' => $merchant?->business_name,
+                    // status will be null if no merchant profile exists yet
+                    'status' => $merchant?->status,
+                    'registered_at' => $merchant?->created_at,
+                ];
+            });
+
+        return response()->json([
+            'success' => true,
+            'data' => $merchants,
+            'total' => $merchants->count()
+        ]);
     }
 }

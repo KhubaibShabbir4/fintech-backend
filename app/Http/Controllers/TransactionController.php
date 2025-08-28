@@ -41,16 +41,21 @@ class TransactionController extends Controller {
         if ($payment->provider !== 'stripe') {
             abort(422, 'Only Stripe refunds are supported here.');
         }
-        if (! $payment->provider_payment_id) {
-            abort(422, 'Payment intent not found on payment.');
+
+        // Prefer refunding via Stripe Checkout Session ID
+        $sessionId = $payment->transaction?->stripe_session_id;
+        if (! $sessionId) {
+            abort(422, 'Stripe session_id not found on transaction.');
         }
 
-        $refund = $this->stripe->refund($payment->provider_payment_id, (float)$data['amount']);
+        // Always refund the full original payment amount
+        $refundAmount = (float) $payment->amount;
+        $refund = $this->stripe->refundByCheckoutSessionId($sessionId, $refundAmount);
 
         // Update DB
         $payment->refunds()->create([
             'provider_refund_id' => $refund['id'],
-            'amount' => (float)$data['amount'],
+            'amount' => $refundAmount,
             'status' => $refund['status'] === 'succeeded' ? 'succeeded' : 'pending',
             'reason' => $data['reason'] ?? null,
         ]);

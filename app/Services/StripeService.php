@@ -97,4 +97,21 @@ class StripeService
             'amount' => isset($refund->amount) ? ((float) $refund->amount) / 100.0 : null,
         ];
     }
+
+	public function refundByCheckoutSessionId(string $checkoutSessionId, ?float $amount = null): array
+	{
+		$session = $this->client->checkout->sessions->retrieve($checkoutSessionId, ['expand' => ['payment_intent']]);
+		$paymentIntentId = null;
+		if (isset($session->payment_intent)) {
+			$paymentIntentId = is_string($session->payment_intent)
+				? $session->payment_intent
+				: ($session->payment_intent->id ?? null);
+		}
+
+		if (!$paymentIntentId) {
+			throw new \RuntimeException('Unable to determine payment_intent from checkout session.');
+		}
+
+		return $this->refund($paymentIntentId, $amount);
+	}
 }
