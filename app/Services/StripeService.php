@@ -67,7 +67,7 @@ class StripeService
                 ],
                 // 'application_fee_amount' => 200, // optional platform fee
             ],
-        ]); // ❌ removed "['stripe_account' => ...]" — create session on platform
+        ]);
 
         Log::info("Stripe CheckoutSession created", [
             'session_id' => $session->id,
@@ -82,9 +82,17 @@ class StripeService
         ];
     }
 
+    /**
+     * 🔄 Refund PaymentIntent
+     */
     public function refund(string $paymentIntentId, ?float $amount = null): array
     {
-        $payload = ['payment_intent' => $paymentIntentId];
+        $payload = [
+            'payment_intent' => $paymentIntentId,
+            'reverse_transfer' => true,        // 🔥 ensures funds are pulled back from merchant
+            'refund_application_fee' => true,  // if platform fee charged
+        ];
+
         if ($amount !== null) {
             $payload['amount'] = (int) round($amount * 100);
         }
@@ -98,20 +106,24 @@ class StripeService
         ];
     }
 
-	public function refundByCheckoutSessionId(string $checkoutSessionId, ?float $amount = null): array
-	{
-		$session = $this->client->checkout->sessions->retrieve($checkoutSessionId, ['expand' => ['payment_intent']]);
-		$paymentIntentId = null;
-		if (isset($session->payment_intent)) {
-			$paymentIntentId = is_string($session->payment_intent)
-				? $session->payment_intent
-				: ($session->payment_intent->id ?? null);
-		}
+    /**
+     * 🔄 Refund by Checkout Session ID
+     */
+    public function refundByCheckoutSessionId(string $checkoutSessionId, ?float $amount = null): array
+    {
+        $session = $this->client->checkout->sessions->retrieve($checkoutSessionId, ['expand' => ['payment_intent']]);
+        $paymentIntentId = null;
 
-		if (!$paymentIntentId) {
-			throw new \RuntimeException('Unable to determine payment_intent from checkout session.');
-		}
+        if (isset($session->payment_intent)) {
+            $paymentIntentId = is_string($session->payment_intent)
+                ? $session->payment_intent
+                : ($session->payment_intent->id ?? null);
+        }
 
-		return $this->refund($paymentIntentId, $amount);
-	}
+        if (!$paymentIntentId) {
+            throw new \RuntimeException('Unable to determine payment_intent from checkout session.');
+        }
+
+        return $this->refund($paymentIntentId, $amount);
+    }
 }
