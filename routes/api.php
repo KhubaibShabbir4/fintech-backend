@@ -76,6 +76,9 @@ Route::middleware(['auth:sanctum', 'role:admin,api'])->group(function () {
     Route::post('/admin/approve-merchant/{id}', [MerchantApprovalController::class, 'approveMerchant']);
     Route::patch('/admin/merchants/{id}/status', [MerchantApprovalController::class, 'setStatus']);
 
+    // Fetch all merchants with user information
+    Route::get('/admin/merchants', [MerchantApprovalController::class, 'getAllMerchants']);
+
     // Transactions
     Route::get('/admin/transactions', [TransactionController::class, 'index']);
     Route::get('/admin/transactions/export', [TransactionController::class, 'exportCsv']);
