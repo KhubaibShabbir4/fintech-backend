@@ -118,6 +118,7 @@ Payment redirect pages (Blade):
 ### Admin (requires `auth:sanctum`, role `admin`)
 - `GET /admin/dashboard` — Pending merchants
 - `POST /admin/approve-merchant/{id}` — Mark merchant as verified
+- `POST /admin/reject-merchant/{id}` — Mark merchant as rejected
 - `PATCH /admin/merchants/{id}/status` — Set status `verified|rejected`
 - `GET /admin/merchants` — All merchant users with profile info
 - `GET /admin/transactions` — List transactions

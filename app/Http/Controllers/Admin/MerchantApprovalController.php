@@ -34,6 +34,16 @@ class MerchantApprovalController extends Controller {
         ]);
     }
 
+    public function rejectMerchant($id, Request $request)
+    {
+        $merchant = $this->service->setApproval($id, 'rejected');
+
+        return response()->json([
+            'message' => "Merchant ID {$id} rejected successfully",
+            'merchant' => $merchant
+        ]);
+    }
+
     public function allTransactions()
     {
         // TODO: fetch transactions from DB
