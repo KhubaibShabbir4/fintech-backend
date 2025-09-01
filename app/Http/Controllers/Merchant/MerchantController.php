@@ -76,6 +76,56 @@ class  MerchantController extends Controller {
         if (!$merchant) {
             abort(404, 'Merchant profile not found for user.');
         }
-        return response()->json($merchant->refresh());
+        
+        // Return both user and merchant profile information
+        return response()->json([
+            'user' => [
+                'id' => $user->id,
+                'name' => $user->name,
+                'email' => $user->email,
+                'created_at' => $user->created_at,
+                'updated_at' => $user->updated_at,
+            ],
+            'merchant' => $merchant->refresh(),
+            'roles' => $user->roles->pluck('name'),
+            'permissions' => $user->getAllPermissions()->pluck('name'),
+        ]);
+    }
+
+    /**
+     * Get the current logged-in merchant's user profile
+     */
+    public function userProfile(Request $request) {
+        $user = $request->user();
+        $merchant = $user->merchant ?? null;
+        
+        if (!$merchant) {
+            abort(404, 'Merchant profile not found for user.');
+        }
+        
+        return response()->json([
+            'user' => [
+                'id' => $user->id,
+                'name' => $user->name,
+                'email' => $user->email,
+                'created_at' => $user->created_at,
+                'updated_at' => $user->updated_at,
+            ],
+            'merchant' => [
+                'id' => $merchant->id,
+                'business_name' => $merchant->business_name,
+                'logo_path' => $merchant->logo_path,
+                'bank_account_name' => $merchant->bank_account_name,
+                'bank_account_number' => $merchant->bank_account_number,
+                'bank_ifsc_swift' => $merchant->bank_ifsc_swift,
+                'payout_preferences' => $merchant->payout_preferences,
+                'status' => $merchant->status,
+                'stripe_account_id' => $merchant->stripe_account_id,
+                'created_at' => $merchant->created_at,
+                'updated_at' => $merchant->updated_at,
+            ],
+            'roles' => $user->roles->pluck('name'),
+            'permissions' => $user->getAllPermissions()->pluck('name'),
+        ]);
     }
 }

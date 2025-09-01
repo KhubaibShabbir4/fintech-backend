@@ -83,115 +83,131 @@ class CheckoutController extends Controller
     /**
      * 🔔 Stripe Webhook Handler
      */
-    public function webhook(Request $request)
-    {
-        $payload = $request->getContent();
-        $sig     = $request->headers->get('Stripe-Signature');
-        $secret  = config('services.stripe.webhook_secret');
+   /**
+ * 🔔 Stripe Webhook Handler
+ */
+/*public function webhook(Request $request)
+{
+    $payload = $request->getContent();
+    $sig     = $request->headers->get('Stripe-Signature');
+    $secret  = config('services.stripe.webhook_secret');
 
-        try {
-            $event = \Stripe\Webhook::constructEvent($payload, $sig, $secret);
-        } catch (\Throwable $e) {
-            Log::error('❌ Stripe Webhook signature verification failed', [
-                'error' => $e->getMessage(),
-                'payload' => $payload
-            ]);
-            return response()->json(['message' => 'Invalid signature'], 400);
-        }
-
-        $type   = $event->type;
-        $object = $event->data->object ?? null;
-
-        if (!$object) {
-            return response()->json(['ok' => true]);
-        }
-
-        Log::info('✅ Stripe Webhook received', [
-            'type'   => $type,
-            'object' => $object,
+    try {
+        $event = \Stripe\Webhook::constructEvent($payload, $sig, $secret);
+    } catch (\Throwable $e) {
+        Log::error('❌ Stripe Webhook signature verification failed', [
+            'error' => $e->getMessage(),
+            'payload' => $payload
         ]);
+        return response()->json(['message' => 'Invalid signature'], 400);
+    }
 
-        $findTransaction = function ($pi = null, $sessionId = null, $chargeId = null) {
-            return Transaction::when($pi, fn($q) => $q->orWhere('stripe_payment_intent', $pi))
-                ->when($sessionId, fn($q) => $q->orWhere('stripe_session_id', $sessionId))
-                ->when($chargeId, fn($q) => $q->orWhere('stripe_charge_id', $chargeId))
-                ->first();
-        };
+    $type   = $event->type;
+    $object = $event->data->object ?? null;
 
-        /**
-         * 🟢 Checkout Session Completed
-         */
-        if ($type === 'checkout.session.completed') {
-            $sessionId = $object->id;
-            $pi        = $object->payment_intent ?? null;
-
-            if (!$pi) {
-                try {
-                    $session = \Stripe\Checkout\Session::retrieve([
-                        'id' => $sessionId,
-                        'expand' => ['payment_intent'],
-                    ]);
-                    $pi = $session->payment_intent?->id ?? null;
-                } catch (\Exception $e) {
-                    Log::error('❌ Failed to fetch session for PI', [
-                        'error' => $e->getMessage(),
-                        'session_id' => $sessionId,
-                    ]);
-                }
-            }
-
-            $tx = $findTransaction($pi, $sessionId);
-            if ($tx) {
-                $tx->update([
-                    'status' => 'success',
-                    'stripe_payment_intent' => $pi,
-                ]);
-
-                if ($tx->payment) {
-                    $tx->payment->update([
-                        'status' => 'success',
-                        'provider_payment_id' => $pi,
-                    ]);
-                }
-            } else {
-                Log::warning('⚠️ Transaction not found for checkout.session.completed', [
-                    'pi' => $pi,
-                    'session_id' => $sessionId,
-                ]);
-            }
-        }
-
-        /**
-         * 🟢 Charge Succeeded (Backup)
-         */
-        if ($type === 'charge.succeeded') {
-            $chargeId = $object->id;
-            $pi = $object->payment_intent ?? null;
-
-            $tx = $findTransaction($pi, null, $chargeId);
-            if ($tx) {
-                $tx->update([
-                    'status' => 'success',
-                    'stripe_payment_intent' => $pi,
-                    'stripe_charge_id' => $chargeId,
-                ]);
-
-                if ($tx->payment) {
-                    $tx->payment->update([
-                        'status' => 'success',
-                        'provider_payment_id' => $pi,
-                    ]);
-                }
-            } else {
-                Log::warning('⚠️ Transaction not found for charge.succeeded', [
-                    'pi' => $pi,
-                    'charge_id' => $chargeId,
-                ]);
-            }
-        }
-
+    if (!$object) {
         return response()->json(['ok' => true]);
     }
+
+    Log::info('✅ Stripe Webhook received', [
+        'type'   => $type,
+        'object' => $object,
+    ]);
+
+    // helper to find related transaction
+    $findTransaction = function ($pi = null, $sessionId = null, $chargeId = null) {
+        return Transaction::when($pi, fn($q) => $q->orWhere('stripe_payment_intent', $pi))
+            ->when($sessionId, fn($q) => $q->orWhere('stripe_session_id', $sessionId))
+            ->when($chargeId, fn($q) => $q->orWhere('stripe_charge_id', $chargeId))
+            ->first();
+    };
+
+    
+     * 🟢 PaymentIntent succeeded (most reliable)
+     
+    if ($type === 'payment_intent.succeeded') {
+        $pi = $object->id;
+        $tx = $findTransaction($pi);
+
+        if ($tx) {
+            $tx->update([
+                'status' => 'success',
+                'stripe_payment_intent' => $pi,
+            ]);
+
+            if ($tx->payment) {
+                $tx->payment->update([
+                    'status' => 'success',
+                    'provider_payment_id' => $pi,
+                ]);
+            }
+        } else {
+            Log::warning('⚠️ Transaction not found for payment_intent.succeeded', [
+                'pi' => $pi,
+            ]);
+        }
+    }
+
+    
+     * 🟢 Checkout Session Completed (sometimes no PI yet)
+     
+    if ($type === 'checkout.session.completed') {
+        $sessionId = $object->id;
+        $pi        = $object->payment_intent ?? null;
+
+        $tx = $findTransaction($pi, $sessionId);
+        if ($tx) {
+            $tx->update([
+                'status' => 'success',
+                'stripe_payment_intent' => $pi,
+            ]);
+
+            if ($tx->payment) {
+                $tx->payment->update([
+                    'status' => 'success',
+                    'provider_payment_id' => $pi,
+                ]);
+            }
+        } else {
+            Log::warning('⚠️ Transaction not found for checkout.session.completed', [
+                'pi' => $pi,
+                'session_id' => $sessionId,
+            ]);
+        }
+    }
+
+    /**
+     * 🟢 Charge Succeeded (backup)
+     
+    if ($type === 'charge.succeeded') {
+        $chargeId = $object->id;
+        $pi = $object->payment_intent ?? null;
+
+        $tx = $findTransaction($pi, null, $chargeId);
+        if ($tx) {
+            $tx->update([
+                'status' => 'success',
+                'stripe_payment_intent' => $pi,
+                'stripe_charge_id' => $chargeId,
+            ]);
+
+            if ($tx->payment) {
+                $tx->payment->update([
+                    'status' => 'success',
+                    'provider_payment_id' => $pi,
+                ]);
+            }
+        } else {
+            Log::warning('⚠️ Transaction not found for charge.succeeded', [
+                'pi' => $pi,
+                'charge_id' => $chargeId,
+            ]);
+        }
+    }
+
+    return response()->json(['ok' => true]);
+}
+*/
 
     /**
      * 🔍 Check status by reference

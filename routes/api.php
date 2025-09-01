@@ -28,6 +28,11 @@ Route::prefix('auth')->group(function () {
     });
 });
 
+// Direct logout route (alternative to /auth/logout)
+Route::middleware('auth:sanctum')->group(function () {
+    Route::post('/logout', [AuthController::class, 'logout']);
+});
+
 // =============================
 // Public Checkout (Customer-Facing, No Auth)
 // =============================
@@ -53,6 +58,7 @@ Route::middleware('auth:sanctum', 'role:merchant,api')->group(function () {
 Route::middleware(['auth:sanctum', 'role:merchant,api', 'merchant.verified'])->group(function () {
     // Merchant profile management
     Route::get('/merchant/profile', [MerchantController::class, 'profile']);
+    Route::get('/merchant/user-profile', [MerchantController::class, 'userProfile']);
     Route::post('/merchant/update', [MerchantController::class, 'update']);
 
     // Merchant Transactions
