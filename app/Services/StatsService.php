@@ -10,7 +10,7 @@ class StatsService implements StatsServiceInterface
 {
     public function revenue(array $filters = [])
     {
-        $q = Payment::query()->where('status', 'succeeded');
+        $q = Payment::query()->where('status', 'success');
 
         if (!empty($filters['merchant_id'])) {
             $q->where('merchant_id', $filters['merchant_id']);
@@ -37,7 +37,7 @@ class StatsService implements StatsServiceInterface
 
     public function methods(array $filters = [])
     {
-        $q = Payment::query()->where('status', 'succeeded');
+        $q = Payment::query()->where('status', 'success');
 
         if (!empty($filters['merchant_id'])) {
             $q->where('merchant_id', $filters['merchant_id']);
@@ -58,7 +58,7 @@ class StatsService implements StatsServiceInterface
         }
 
         return [
-            'succeeded' => (clone $q)->where('status', 'succeeded')->count(),
+            'succeeded' => (clone $q)->where('status', 'success')->count(),
             'failed'    => (clone $q)->where('status', 'failed')->count(),
             'pending'   => (clone $q)->where('status', 'pending')->count(),
             'refunds'   => DB::table('refunds')->count(),

@@ -65,55 +65,83 @@ class PaymentController extends Controller {
         return response()->view('payments.cancel');
     }
 
-    public function webhook(Request $request) {
+    public function webhook(Request $request)
+    {
         $payload = $request->getContent();
         $sig = $request->headers->get('Stripe-Signature');
         $secret = config('services.stripe.webhook_secret');
-
+    
         try {
             $event = \Stripe\Webhook::constructEvent($payload, $sig, $secret);
         } catch (\Throwable $e) {
-            Log::warning('Stripe webhook signature verification failed', ['message' => $e->getMessage()]);
+            Log::error('❌ Stripe Webhook signature verification failed', [
+                'error' => $e->getMessage(),
+                'payload' => $payload
+            ]);
             return response()->json(['status' => 'invalid'], 400);
         }
-
-        $type = $event->type;
+    
+        $type   = $event->type;
         $object = $event->data->object ?? null;
-
+    
+        Log::info("✅ Stripe webhook received", ['type' => $type, 'object' => $object]);
+    
         if ($type === 'checkout.session.completed') {
             $sessionId = $object->id ?? null;
+            $pi        = $object->payment_intent ?? null;
+    
             if ($sessionId) {
                 $tx = Transaction::where('stripe_session_id', $sessionId)->with('payment')->first();
-                if ($tx && $tx->payment) {
+    
+                if ($tx) {
                     $tx->status = 'success';
-                    $tx->save();
-                    $tx->payment->status = 'paid';
-                    if (!$tx->payment->provider_payment_id && isset($object->payment_intent)) {
-                        $tx->payment->provider_payment_id = $object->payment_intent;
+                    if ($pi && !$tx->stripe_payment_intent) {
+                        $tx->stripe_payment_intent = $pi;
                     }
-                    $tx->payment->save();
+                    $tx->save();
+    
+                    if ($tx->payment) {
+                        $tx->payment->update([
+                            'status' => 'paid',
+                            'provider_payment_id' => $pi ?? $tx->payment->provider_payment_id,
+                        ]);
+                    } else {
+                        Log::warning("⚠️ Transaction found but no related Payment", ['tx_id' => $tx->id]);
+                    }
+                } else {
+                    Log::warning("⚠️ No Transaction found for checkout.session.completed", [
+                        'session_id' => $sessionId,
+                        'pi' => $pi,
+                    ]);
                 }
             }
         }
-
+    
         if ($type === 'payment_intent.succeeded') {
             $pi = $object->id ?? null;
+    
             if ($pi) {
                 $tx = Transaction::where('stripe_payment_intent', $pi)->with('payment')->first();
-                if ($tx && $tx->payment) {
-                    $tx->status = 'success';
-                    $tx->save();
-                    $tx->payment->status = 'paid';
-                    if (!$tx->payment->provider_payment_id) {
-                        $tx->payment->provider_payment_id = $pi;
+    
+                if ($tx) {
+                    $tx->update(['status' => 'success']);
+    
+                    if ($tx->payment) {
+                        $tx->payment->update([
+                            'status' => 'paid',
+                            'provider_payment_id' => $pi,
+                        ]);
+                    } else {
+                        Log::warning("⚠️ Transaction found but no related Payment", ['tx_id' => $tx->id]);
                     }
-                    $tx->payment->save();
+                } else {
+                    Log::warning("⚠️ No Transaction found for payment_intent.succeeded", ['pi' => $pi]);
                 }
             }
         }
-
+    
         return response()->json(['status' => 'ok']);
     }
-}
+}    
 
 
