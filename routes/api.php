@@ -80,6 +80,7 @@ Route::middleware(['auth:sanctum', 'role:admin,api'])->group(function () {
     // Merchant Approvals
     Route::get('/admin/dashboard', [MerchantApprovalController::class, 'dashboard']);
     Route::post('/admin/approve-merchant/{id}', [MerchantApprovalController::class, 'approveMerchant']);
+    Route::post('/admin/reject-merchant/{id}', [MerchantApprovalController::class, 'rejectMerchant']);
     Route::patch('/admin/merchants/{id}/status', [MerchantApprovalController::class, 'setStatus']);
 
     // Fetch all merchants with user information
