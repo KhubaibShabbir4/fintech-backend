@@ -43,11 +43,11 @@ class StripeService
     public function createCheckoutSession(
         float $amount,
         string $currency,
-        string $merchantStripeAccountId,
+        ?string $merchantStripeAccountId,
         string $successUrl,
         string $cancelUrl
     ): array {
-        $session = $this->client->checkout->sessions->create([
+        $payload = [
             'mode' => 'payment',
             'success_url' => $successUrl . '?session_id={CHECKOUT_SESSION_ID}',
             'cancel_url' => $cancelUrl,
@@ -61,13 +61,39 @@ class StripeService
                 ],
                 'quantity' => 1,
             ]],
-            'payment_intent_data' => [
-                'transfer_data' => [
-                    'destination' => $merchantStripeAccountId, // ✅ funds go to merchant
-                ],
-                // 'application_fee_amount' => 200, // optional platform fee
-            ],
-        ]);
+        ];
+
+        $options = []; // extra opts like ['stripe_account' => acct_xxx]
+
+        // ✅ Only attempt transfers if explicitly enabled & merchant ID is provided
+        if (
+            config('services.stripe.use_transfers', false) &&
+            !empty($merchantStripeAccountId)
+        ) {
+            try {
+                // Retrieve account to check capabilities
+                $account = $this->client->accounts->retrieve($merchantStripeAccountId, []);
+
+                if (
+                    isset($account->capabilities->transfers) &&
+                    $account->capabilities->transfers === 'active'
+                ) {
+                    // Direct-to-merchant flow
+                    $payload['payment_intent_data'] = [
+                        'transfer_data' => [
+                            'destination' => $merchantStripeAccountId,
+                        ],
+                        // 'application_fee_amount' => 200, // optional platform fee
+                    ];
+                } else {
+                    Log::warning("Merchant account {$merchantStripeAccountId} has no active transfers capability. Falling back to platform checkout.");
+                }
+            } catch (\Throwable $e) {
+                Log::error("Failed retrieving merchant account {$merchantStripeAccountId}: " . $e->getMessage());
+            }
+        }
+
+        $session = $this->client->checkout->sessions->create($payload, $options);
 
         Log::info("Stripe CheckoutSession created", [
             'session_id' => $session->id,
@@ -89,8 +115,8 @@ class StripeService
     {
         $payload = [
             'payment_intent' => $paymentIntentId,
-            'reverse_transfer' => true,        // 🔥 ensures funds are pulled back from merchant
-            'refund_application_fee' => true,  // if platform fee charged
+            'reverse_transfer' => true,
+            'refund_application_fee' => true,
         ];
 
         if ($amount !== null) {
@@ -111,9 +137,12 @@ class StripeService
      */
     public function refundByCheckoutSessionId(string $checkoutSessionId, ?float $amount = null): array
     {
-        $session = $this->client->checkout->sessions->retrieve($checkoutSessionId, ['expand' => ['payment_intent']]);
-        $paymentIntentId = null;
+        $session = $this->client->checkout->sessions->retrieve(
+            $checkoutSessionId,
+            ['expand' => ['payment_intent']]
+        );
 
+        $paymentIntentId = null;
         if (isset($session->payment_intent)) {
             $paymentIntentId = is_string($session->payment_intent)
                 ? $session->payment_intent
